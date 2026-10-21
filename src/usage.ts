@@ -1,18 +1,19 @@
 /**
  * /skill-usage — which skills earn their prompt cost, computed globally.
  *
- * The installed set has two sources, because neither alone is complete:
+ * The installed set has two sources, because one of them arrives late:
  *
  * - `before_agent_start`'s `systemPromptOptions.skills` is what pi actually put
  *   in the prompt, including paths contributed through `resources_discover`
  *   (pi-hermes-memory and project memory skills are contributed that way).
- * - `pi.getCommands()` is available before the first request, but on this
- *   machine it only lists skills that were registered as slash commands, which
- *   misses the `resources_discover` ones.
+ * - `pi.getCommands()` is available before the first request, and reads the same
+ *   resource loader the prompt is built from — but only once `resources_discover`
+ *   has contributed its paths, which happens after `session_start`. Reading it
+ *   there (and caching that answer) sees 6 skills where the prompt has 28.
  *
- * So the prompt set is authoritative once a request has started, and the
- * command set covers the cold start. Costs are measured with pi's own
- * formatter, not estimated.
+ * So the prompt set is authoritative once a request has started, and the command
+ * set, re-read on every cold-start use, covers everything before that. Costs are
+ * measured with pi's own formatter, not estimated.
  */
 import {
   formatSkillsForPrompt,
@@ -26,16 +27,10 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 
 import { backfill, commitBackfill } from "./backfill.ts";
+import { resolveSet, type Installed } from "./installed.ts";
 import { commitFire, fires, readLedger } from "./ledger.ts";
 import { inputSkill, readTarget } from "./match.ts";
 import { formatUsage, rows, type Row } from "./report.ts";
-
-interface Installed {
-  name: string;
-  filePath: string;
-  chars: number;
-  promptVisible: boolean;
-}
 
 /** Real path when it exists, resolved path otherwise: Nix store skills are symlinked. */
 function canonical(path: string): string {
@@ -74,8 +69,8 @@ export default function skillUsage(pi: ExtensionAPI): void {
   const ledgerFile = resolve(getAgentDir(), "skill-usage", "v3.json");
   let installed: Installed[] = [];
   let byPath = new Map<string, string>();
-  /** False until pi hands over the prompt set; the command fallback is partial. */
-  let authoritative = false;
+  /** The prompt set, once pi has handed it over; the command set is read until then. */
+  let promptSet: Installed[] | null = null;
   /** Key of the set the last measurement was made for: re-measuring is quadratic. */
   let measured: string | null = null;
 
@@ -103,12 +98,12 @@ export default function skillUsage(pi: ExtensionAPI): void {
     return measure(skills);
   }
 
-  function ensureReady(): void {
-    if (installed.length > 0) return;
+  /** Take the prompt set if pi has given it, else re-read the command set. */
+  function refresh(): void {
     try {
-      adopt(fromCommands());
+      adopt(resolveSet(promptSet, fromCommands));
     } catch {
-      // Leave it empty: better to miss a count than to break the call.
+      // Keep whatever is already adopted: better to miss a count than to break the call.
     }
   }
 
@@ -123,29 +118,27 @@ export default function skillUsage(pi: ExtensionAPI): void {
   }
 
   function currentRows(): Row[] {
-    ensureReady();
+    refresh();
     return rows(installed, readLedger(ledgerFile, Date.now()));
   }
 
   pi.on("before_agent_start", (event) => {
     const list = (event as { systemPromptOptions?: { skills?: Skill[] } }).systemPromptOptions?.skills;
     if (!Array.isArray(list)) return;
-    authoritative = true;
     // An empty list is the truth too: with every skill removed, the table must
     // stop showing the ones that are gone.
     const key = list.map((skill) => `${skill.filePath}\n${skill.description.length}`).join("\u0000");
     if (key === measured) return;
     measured = key;
-    adopt(measure(list));
+    promptSet = measure(list);
+    adopt(promptSet);
   });
-
-  pi.on("session_start", () => ensureReady());
 
   pi.on("tool_call", (event, ctx: ExtensionContext) => {
     if (event.toolName !== "read") return;
     const input = event.input as { path?: unknown };
     if (typeof input?.path !== "string") return;
-    ensureReady();
+    refresh();
     const wanted = canonical(readTarget(ctx.cwd, input.path));
     for (const [path, name] of byPath) {
       if (path === wanted) {
@@ -156,7 +149,8 @@ export default function skillUsage(pi: ExtensionAPI): void {
   });
 
   pi.on("input", (event) => {
-    ensureReady();
+    // The first message of a session arrives before any prompt set exists.
+    refresh();
     // Only count skills pi actually loaded, whatever the message claims.
     const name = inputSkill(event, (wanted) => installed.some((skill) => skill.name === wanted));
     if (name) note(name);
@@ -173,19 +167,9 @@ export default function skillUsage(pi: ExtensionAPI): void {
     return basename(dir).startsWith("--") ? dirname(dir) : dir;
   }
 
-  function report(): { title: string; lines: string[] } {
-    const usage = formatUsage(currentRows());
-    if (!authoritative) {
-      // First line, not the end of the table: a partial skill set must not be
-      // read as the whole answer, and the fix (send a message) is one step away.
-      usage.lines.unshift(
-        "Partial: pi only reveals the full skill set once a request has started.",
-        "Send one message, then run this again.",
-        "",
-      );
-    }
-    return usage;
-  }
+  // The command set is the whole set once `resources_discover` has run, so there is
+  // nothing partial left to warn about: the table is the answer either way.
+  const report = (): { title: string; lines: string[] } => formatUsage(currentRows());
 
   const show = async (
     lines: () => { title: string; lines: string[] },

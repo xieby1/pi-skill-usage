@@ -175,12 +175,14 @@ Two sources, because neither alone is complete:
   prompt, including paths contributed through `resources_discover`. On a machine
   using pi-hermes-memory, most skills arrive this way and are *not* registered as
   slash commands.
-- `pi.getCommands()` — available before the first request, but only lists skills
-  that pi registered as commands.
+- `pi.getCommands()` — available before the first request. It reads the same
+  loader the prompt is built from, but only *after* `resources_discover` has added
+  the paths other extensions contribute (`session_start` fires before that), so it
+  has to be asked again rather than cached.
 
 The prompt set wins once a request has started. Before that, the command set is
-all that exists, so `/skill-usage` marks itself **Partial** and tells you to send
-one message first.
+the whole set, and `/skill-usage` answers in full rather than telling you to send
+a message first.
 
 `pi.getCommands()` is built at startup from the fully resolved skill set
 (`dist/core/agent-session.js`, `_bindExtensionCore`):
