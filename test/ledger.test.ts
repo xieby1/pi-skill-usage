@@ -1,41 +1,81 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
-import { commitLedger, mergeLedgers, parseLedger, readLedger, record } from "../src/ledger.ts";
+import { commitFire, emptyLedger, fires, MONTHS, parseLedger, readLedger, record, roll } from "../src/ledger.ts";
 
-test("parseLedger tolerates junk and drops zero counts", () => {
-  assert.deepEqual(parseLedger(null), {});
-  assert.deepEqual(parseLedger("not json"), {});
-  assert.deepEqual(parseLedger("[]"), {});
-  const ledger = parseLedger('{"a":{"count":2,"lastAt":5,"byModel":1,"byCommand":1},"b":{"count":0}}');
-  assert.deepEqual(ledger, { a: { count: 2, lastAt: 5, byModel: 1, byCommand: 1 } });
+/** UTC month index, same arithmetic as the ledger. */
+const at = (year: number, month: number, day = 15): number => Date.UTC(year, month - 1, day);
+const monthly = (index: number, count: number): number[] =>
+  Array.from({ length: MONTHS }, (_, i) => (i === index ? count : 0));
+
+test("a fire lands in the current month slot", () => {
+  const ledger = record(emptyLedger(at(2026, 10)), "a", at(2026, 10));
+  assert.deepEqual(ledger.skills.a.m, monthly(0, 1));
+  assert.equal(fires(ledger.skills.a), 1);
+  assert.equal(ledger.skills.a.lastAt, at(2026, 10));
 });
 
-test("record splits model from command", () => {
-  let ledger = record({}, "ponytail", "model", 100);
-  ledger = record(ledger, "ponytail", "command", 90);
-  assert.deepEqual(ledger.ponytail, { count: 2, lastAt: 100, byModel: 1, byCommand: 1 });
+test("roll moves the window forward with the calendar", () => {
+  const january = record(emptyLedger(at(2026, 1)), "a", at(2026, 1, 10));
+  const february = roll(january, at(2026, 2, 1));
+  assert.deepEqual(february.skills.a.m, monthly(1, 1));
+  assert.equal(fires(february.skills.a), 1);
 });
 
-test("mergeLedgers adds counts on both sides", () => {
-  const a = { x: { count: 2, lastAt: 10, byModel: 2, byCommand: 0 } };
-  const b = { x: { count: 3, lastAt: 20, byModel: 0, byCommand: 3 }, y: { count: 1, lastAt: 5, byModel: 1, byCommand: 0 } };
-  const merged = mergeLedgers(a, b);
-  assert.deepEqual(merged.x, { count: 5, lastAt: 20, byModel: 2, byCommand: 3 });
-  assert.deepEqual(merged.y, { count: 1, lastAt: 5, byModel: 1, byCommand: 0 });
+test("roll folds months that leave the window into older", () => {
+  const ledger = record(emptyLedger(at(2025, 1)), "a", at(2025, 1));
+  assert.deepEqual(roll(ledger, at(2025, 12)).skills.a.m, monthly(11, 1));
+  const aYearOn = roll(ledger, at(2026, 1));
+  assert.deepEqual(aYearOn.skills.a.m, monthly(0, 0));
+  assert.equal(aYearOn.skills.a.older, 1);
+  const yearsOn = roll(ledger, at(2029, 5));
+  assert.deepEqual(yearsOn.skills.a.m, monthly(0, 0));
+  assert.equal(yearsOn.skills.a.older, 1);
 });
 
-test("commitLedger is additive across writers and survives a corrupt file", async () => {
-  const dir = await import("node:fs/promises").then((fs) => fs.mkdtemp("/tmp/pi-skill-usage-"));
-  const file = `${dir}/skill-usage.json`;
+test("roll never shifts backwards, and a skewed clock writes to the current slot", () => {
+  const ledger = record(emptyLedger(at(2026, 6)), "a", at(2026, 6));
+  assert.equal(roll(ledger, at(2026, 5)), ledger);
+  assert.deepEqual(record(ledger, "a", at(2026, 1)).skills.a.m, monthly(0, 2));
+});
 
-  commitLedger(file, { a: { count: 1, lastAt: 1, byModel: 1, byCommand: 0 } });
-  // A second "process" that still holds the old view must not erase the first write.
-  commitLedger(file, { a: { count: 1, lastAt: 2, byModel: 1, byCommand: 0 } });
-  assert.equal(readLedger(file).a.count, 2);
+test("unusable files read as nothing recorded yet", () => {
+  const now = at(2026, 10);
+  assert.deepEqual(parseLedger(null, now).skills, {});
+  assert.deepEqual(parseLedger("not json", now).skills, {});
+  // v1 shape (no v, no month) is not migrated: one old record, deliberately lost.
+  assert.deepEqual(parseLedger('{"a":{"count":2,"lastAt":5,"byModel":1,"byCommand":1}}', now).skills, {});
+  assert.deepEqual(parseLedger('{"v":2,"month":"2026-10","skills":{"a":{"m":[1],"older":0}}}', now).skills, {});
+  assert.deepEqual(parseLedger('{"v":2,"month":"oops","skills":{}}', now).skills, {});
+});
 
-  await import("node:fs").then((fs) => fs.writeFileSync(file, "{ truncated"));
-  assert.deepEqual(readLedger(file), {});
-  const recovered = commitLedger(file, { b: { count: 1, lastAt: 3, byModel: 0, byCommand: 1 } });
-  assert.deepEqual(Object.keys(recovered), ["b"]);
+test("parse drops skills with no fires and keeps the rest", () => {
+  const now = at(2026, 10);
+  const raw = JSON.stringify({
+    v: 2,
+    month: "2026-10",
+    skills: {
+      empty: { m: monthly(0, 0), older: 0, lastAt: 0 },
+      old: { m: monthly(0, 0), older: 3, lastAt: 5 },
+    },
+  });
+  const parsed = parseLedger(raw, now);
+  assert.deepEqual(Object.keys(parsed.skills), ["old"]);
+  assert.equal(parsed.month, 2026 * 12 + 9);
+});
+
+test("commitFire sums within a month and rolls across one", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "skill-usage-")), "skill-usage.json");
+  commitFire(file, "a", at(2026, 10, 1));
+  commitFire(file, "a", at(2026, 10, 20));
+  assert.deepEqual(readLedger(file, at(2026, 10, 21)).skills.a.m, monthly(0, 2));
+
+  commitFire(file, "a", at(2026, 11, 2));
+  const after = readLedger(file, at(2026, 11, 3));
+  assert.equal(after.skills.a.m[0], 1);
+  assert.equal(after.skills.a.m[1], 2);
+  assert.match(readFileSync(file, "utf8"), /"month": "2026-11"/);
 });

@@ -95,8 +95,10 @@ No package satisfies R1–R4 simultaneously, so this is written directly:
   `pi.getCommands()` as the cold-start fallback (it lists only command-registered
   skills, so it is marked partial rather than reported as the whole set)
 - counting from `tool_call` (a `read` of a known `SKILL.md`) and `input` (`/skill:`)
-- one **global** `~/.pi/agent/skill-usage.json`, aggregate counts per skill name
-- `/skill-usage unused` sorted by measured prompt-token cost
-- atomic temp+rename write, re-read and sum before writing
+- one **global** `~/.pi/agent/skill-usage-v2.json`, 13 monthly counters plus an
+  `older` total per skill, rolled to the current month on read
+- `/skill-usage unused` sorted by measured prompt-token cost, `/skill-usage buckets`
+  for fires per month
+- atomic temp+rename write, one read-modify-write per fire
 
-About 180 lines of extension plus 90 of tests, no dependencies, nothing to rebase.
+About 470 lines of extension plus 165 of tests, no dependencies, nothing to rebase.

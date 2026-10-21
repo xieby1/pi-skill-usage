@@ -20,6 +20,27 @@ estimate.
 `/skill-usage cost` lists every prompt-visible skill with its cost, fire count and
 last use.
 
+`/skill-usage buckets` is the same data as a 13-row histogram: fires per month for
+the last 12 months, then everything older than that window.
+
+```
+/skill-usage buckets
+78 prompt-visible skills, 2841 tokens on every request, fires per month:
+
+   2026-10   23    9      412 tok
+   2026-09   11   11      655 tok
+   2026-08    6    5      223 tok
+   ...
+   2025-11    0    0        0 tok
+>12 months    0    0        0 tok
+
+Columns: fires, distinct skills that fired, their prompt rent. Months are UTC.
+66 of 78 prompt-visible skills never fired: see /skill-usage unused.
+```
+
+Each skill is counted once per month it fired in, so `fires` sums across rows while
+`tok` does not — it is the rent of the skills that were earning it that month.
+
 ## Install
 
 ```bash
@@ -45,17 +66,38 @@ not credited. Nothing can see that.
 
 ## Storage
 
-`~/.pi/agent/skill-usage.json`, one aggregate entry per skill, global across
-projects and sessions:
+`~/.pi/agent/skill-usage-v2.json`, one entry per skill, global across projects and
+sessions. The version is in the filename on purpose: a pi window still running an
+older extension reads the other file, and would otherwise find this one empty and
+rewrite it in the old shape. It looks like this:
 
 ```json
-{ "ponytail-review": { "count": 12, "lastAt": 1792573000000, "byModel": 9, "byCommand": 3 } }
+{
+  "v": 2,
+  "month": "2026-10",
+  "skills": {
+    "ponytail-review": {
+      "m": [1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
+      "older": 9,
+      "lastAt": 1792573000000
+    }
+  }
+}
 ```
 
-Sized by how many skills exist, not by how much you use them, so there is nothing
-to prune and no retention setting worth having. Writes re-read and sum before an
-atomic rename, so concurrent pi windows never lose each other's counts; a corrupt
-file reads as "nothing recorded yet".
+`m[0]` is the current month, `m[11]` is eleven months back, `older` is anything
+older than the window. Thirteen numbers per skill, so the file is sized by how many
+skills exist, not by how much you use them: nothing to prune, no retention setting
+worth having.
+
+The month array only means something relative to `"month"`, so rollover is
+explicit: on every read the window slides forward to today, spilling whatever
+leaves it into `older`. Reads never shift it backwards — a clock that jumped is not
+a new bucket. Writes are one read-modify-write per fire: re-read, roll, add one to
+the current month, atomic rename, with nothing accumulated in memory, so a session
+left open across a month boundary cannot misbucket a count. Two windows firing in
+the same instant can still lose one count; the rename makes each write atomic, not
+the read-modify-write pair. A corrupt or v1 file reads as "nothing recorded yet".
 
 Counts start when the extension is installed — there is no backfill from old
 sessions.

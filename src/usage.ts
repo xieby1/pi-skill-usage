@@ -25,8 +25,8 @@ import {
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { commitLedger, readLedger, record, type Ledger } from "./ledger.ts";
-import { formatCost, formatUnused, rows, type Row } from "./report.ts";
+import { commitFire, readLedger } from "./ledger.ts";
+import { formatBuckets, formatCost, formatUnused, rows, type Row } from "./report.ts";
 
 interface Installed {
   name: string;
@@ -63,8 +63,9 @@ function measure(skills: Skill[]): Installed[] {
 }
 
 export default function skillUsage(pi: ExtensionAPI): void {
-  const ledgerFile = resolve(getAgentDir(), "skill-usage.json");
-  let ledger: Ledger = readLedger(ledgerFile);
+  // The v2 shape lives in its own file: a pi window still running v1 reads the
+  // main file, calls it empty, and rewrites it as v1 — which would erase this.
+  const ledgerFile = resolve(getAgentDir(), "skill-usage-v2.json");
   let installed: Installed[] = [];
   let byPath = new Map<string, string>();
   /** False until pi hands over the prompt set; the command fallback is partial. */
@@ -104,12 +105,11 @@ export default function skillUsage(pi: ExtensionAPI): void {
     }
   }
 
-  function note(name: string, by: "model" | "command"): void {
-    ledger = record(ledger, name, by, Date.now());
+  function note(name: string): void {
     try {
-      // Aggregate counters, so this file stays tiny; re-read and sum inside
-      // commitLedger keeps concurrent pi windows from overwriting each other.
-      ledger = commitLedger(ledgerFile, ledger);
+      // One read-modify-write per fire, so nothing in memory can misbucket a
+      // count when a session is still open across a month boundary.
+      commitFire(ledgerFile, name, Date.now());
     } catch {
       // Never let bookkeeping break the session.
     }
@@ -117,8 +117,7 @@ export default function skillUsage(pi: ExtensionAPI): void {
 
   function currentRows(): Row[] {
     ensureReady();
-    ledger = readLedger(ledgerFile);
-    return rows(installed, ledger);
+    return rows(installed, readLedger(ledgerFile, Date.now()));
   }
 
   pi.on("before_agent_start", (event) => {
@@ -139,7 +138,7 @@ export default function skillUsage(pi: ExtensionAPI): void {
     const wanted = canonical(resolve(ctx.cwd, input.path));
     for (const [path, name] of byPath) {
       if (path === wanted) {
-        note(name, "model");
+        note(name);
         return;
       }
     }
@@ -152,15 +151,21 @@ export default function skillUsage(pi: ExtensionAPI): void {
     ensureReady();
     const name = match[1];
     // Only count skills pi actually loaded, whatever the message claims.
-    if (installed.some((skill) => skill.name === name)) note(name, "command");
+    if (installed.some((skill) => skill.name === name)) note(name);
   });
 
   pi.registerCommand("skill-usage", {
-    description: "Prompt cost and fire counts per skill: /skill-usage [unused|cost]",
+    description: "Prompt cost and fire counts per skill: /skill-usage [unused|cost|buckets]",
     handler: async (args: string, ctx: ExtensionContext) => {
       const route = args.trim().toLowerCase() || "unused";
-      if (route !== "unused" && route !== "cost") {
-        await ctx.ui.select("Skill usage", ["Usage: /skill-usage [unused | cost]"]);
+      const formats = new Map<string, (all: Row[]) => string[]>([
+        ["unused", formatUnused],
+        ["cost", formatCost],
+        ["buckets", formatBuckets],
+      ]);
+      const format = formats.get(route);
+      if (!format) {
+        await ctx.ui.select("Skill usage", ["Usage: /skill-usage [unused | cost | buckets]"]);
         return;
       }
       let list: Row[];
@@ -172,7 +177,7 @@ export default function skillUsage(pi: ExtensionAPI): void {
         ]);
         return;
       }
-      const lines = route === "cost" ? formatCost(list) : formatUnused(list);
+      const lines = format(list);
       if (!authoritative) {
         lines.push(
           "",

@@ -1,7 +1,7 @@
 {
   "name": "pi-skill-usage",
-  "version": "0.1.0",
-  "description": "Global per-skill fire counts and prompt cost for pi: /skill-usage [unused|cost]",
+  "version": "0.2.0",
+  "description": "Global per-skill fire counts and prompt cost for pi: /skill-usage [unused|cost|buckets]",
   "keywords": [
     "pi-package",
     "pi-extension",

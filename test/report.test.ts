@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatCost, formatUnused, rows, tokensOf, unusedRows } from "../src/report.ts";
+import { formatBuckets, formatCost, formatUnused, rows, tokensOf, unusedRows } from "../src/report.ts";
+import { MONTHS, type Ledger, type Usage } from "../src/ledger.ts";
+
+const monthly = (index: number, count: number): number[] =>
+  Array.from({ length: MONTHS }, (_, i) => (i === index ? count : 0));
+
+/** 2026-10, the anchor for every fixture below. */
+const now = Date.UTC(2026, 9, 15);
+const ledger: Ledger = { month: 2026 * 12 + 9, skills: { used: { m: monthly(2, 3), older: 0, lastAt: 5 } } };
 
 const installed = [
   { name: "wide", chars: 400, promptVisible: true },
@@ -9,8 +17,6 @@ const installed = [
   { name: "hidden", chars: 400, promptVisible: false },
   { name: "used", chars: 80, promptVisible: true },
 ];
-
-const ledger = { used: { count: 3, lastAt: 5, byModel: 2, byCommand: 1 } };
 
 test("tokensOf rounds up at four characters per token", () => {
   assert.equal(tokensOf(0), 0);
@@ -23,7 +29,7 @@ test("unusedRows is prompt-visible only, costliest first", () => {
 });
 
 test("a skill with zero recorded fires counts as unused", () => {
-  const zeroed = { used: { count: 0, lastAt: 0, byModel: 0, byCommand: 0 } };
+  const zeroed: Ledger = { month: ledger.month, skills: { used: { m: monthly(0, 0), older: 0, lastAt: 0 } } };
   assert.deepEqual(unusedRows(rows(installed, zeroed)).map((row) => row.name), ["wide", "used", "narrow"]);
 });
 
@@ -35,8 +41,11 @@ test("formatUnused reports how many of how many, and the wasted total", () => {
 });
 
 test("formatUnused handles an empty install and a fully used set", () => {
-  assert.match(formatUnused(rows([], {})).join("\n"), /No prompt-visible skills/);
-  const allUsed = { wide: ledger.used, narrow: ledger.used, used: ledger.used };
+  assert.match(formatUnused(rows([], { month: ledger.month, skills: {} })).join("\n"), /No prompt-visible skills/);
+  const allUsed: Ledger = {
+    month: ledger.month,
+    skills: { wide: ledger.skills.used, narrow: ledger.skills.used, used: ledger.skills.used },
+  };
   assert.match(formatUnused(rows(installed, allUsed))[0], /All 3 prompt-visible skills have fired/);
 });
 
@@ -45,5 +54,30 @@ test("formatCost shows counts and last use", () => {
   assert.match(text, /3 prompt-visible skills, 130 tokens on every request/);
   assert.match(text, /used +3x/);
   assert.match(text, /wide +never/);
+  assert.doesNotMatch(text, /hidden/);
+});
+
+test("formatBuckets is fires per month, then everything older than the window", () => {
+  const skills: Record<string, Usage> = {
+    this: { m: monthly(0, 2), older: 0, lastAt: now },
+    then: { m: monthly(3, 1), older: 0, lastAt: now },
+    old: { m: monthly(0, 0), older: 3, lastAt: 5 },
+  };
+  const list = [
+    { name: "this", chars: 400, promptVisible: true },
+    { name: "then", chars: 40, promptVisible: true },
+    { name: "old", chars: 80, promptVisible: true },
+    { name: "never", chars: 80, promptVisible: true },
+    { name: "hidden", chars: 400, promptVisible: false },
+  ];
+  const lines = formatBuckets(rows(list, { month: ledger.month, skills }), now);
+  const text = lines.join("\n");
+
+  assert.match(lines[0], /^4 prompt-visible skills, 150 tokens on every request/);
+  assert.match(text, /2026-10 +2 +1 +100 tok/);
+  assert.match(text, /2026-07 +1 +1 +10 tok/); // three months back
+  assert.match(text, />12 months +3 +1 +20 tok/);
+  assert.match(text, /1 of 4 prompt-visible skills never fired/);
+  assert.equal(lines.filter((line) => line.endsWith(" tok")).length, 13);
   assert.doesNotMatch(text, /hidden/);
 });
