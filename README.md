@@ -94,6 +94,35 @@ corrupt or older-schema file reads as "nothing recorded yet".
 Counts start when the extension is installed — there is no backfill from old
 sessions.
 
+## Reading it without pi
+
+The ledger is a plain file, so an agent with a shell gets the same fires as the
+command, with no tool to register. `node` is already there (pi needs it); `jq` may
+not be. `sum(m) + older` is the total, whatever the anchor month is:
+
+```bash
+node -e 'const f=process.env.HOME+"/.pi/agent/skill-usage-v3.json";let s
+ try{s=require(f).skills}catch{console.error("no ledger yet: "+f);process.exit(1)}
+ const n=u=>u.m.reduce((a,b)=>a+b,0)+u.older
+ for(const [k,u] of Object.entries(s).sort((a,b)=>n(a[1])-n(b[1])))console.log(n(u)+"\t"+k)'
+```
+
+Output is `fires<TAB>skill`, least-fired first; append `| sort -k1,1rn` to put the
+busiest on top.
+
+Three things the file does not tell you:
+
+- **Which skills are installed.** That set is the model's own `<available_skills>`
+  block; unused is that list minus the names with a non-zero count.
+- **What each one costs.** `tok` is measured in-process by pi's prompt formatter and
+  is not stored here; `SKILL.md` size ÷ 4 is only an estimate of it.
+- **Whether there is any data.** Counts start at install, so a missing file means
+  "nothing recorded yet", not "nothing is used". Never prune on an empty ledger.
+
+And one trap: an agent auditing skills by `read`ing their `SKILL.md` files records a
+fire for every one it inspects, corrupting the numbers it is auditing. Read this
+file first; reading it is free.
+
 ## Where the installed set comes from
 
 Two sources, because neither alone is complete:
