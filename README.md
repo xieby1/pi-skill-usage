@@ -59,6 +59,40 @@ Two things, both observable from an extension:
 A skill driven through its own `scripts/` by `bash`, without either of those, is
 not credited. Nothing can see that.
 
+## Filling in past fires
+
+`/skill-usage-backfill` rebuilds the whole ledger from pi's session logs, so the
+table has history from before the extension was installed. On this machine that
+was 71 fires across 18 skills from 254 sessions, against 2 live ones.
+
+It **replaces** the file instead of adding to it. The sessions live in the same
+synced data directory as the ledger, so the logs contain every fire pi wrote to
+them — which makes a rebuild idempotent: safe to run twice, and safe to run on
+whichever machine you happen to be on.
+
+The parse mirrors [What counts as a fire](#what-counts-as-a-fire) exactly, and
+reads structured records only: tool results quote `SKILL.md` bodies, the system
+prompt pastes the whole skill list, and this README contains the literal
+`/skill:<name>` template, so a text search over the same files reports
+`ponytail-review` at 252 fires instead of 13 — a 19× overcount.
+
+Two deliberate differences from the live path:
+
+- The name comes from the skill's directory, not from the set installed today, so
+  a skill renamed since keeps the entry its old fires were recorded under.
+- Files with `sync-conflict` in the name are skipped: a conflicted session is the
+  same session twice, and would double every fire in it.
+
+No confirm prompt. The answer to "overwrite?" is always yes, so
+`mv v3.json v3.json.bak` is the button for the other answer. A scan that finds no
+fires writes nothing, so a machine whose synced sessions have not arrived yet
+cannot empty the ledger.
+
+Two fires are one press away from being lost: one raised by an extension alias
+whose `/skill:<name>` pi logs as the expanded text (live counting sees it, a
+rebuild does not), and one raised by another pi window during the scan itself,
+which the wholesale replace overwrites. Run it while nothing else is firing.
+
 ## Storage
 
 `~/.pi/agent/skill-usage/v3.json`, one entry per skill, global across projects and
@@ -100,8 +134,8 @@ cannot misbucket a count. Two windows firing in the same instant can still lose 
 count; the rename makes each write atomic, not the read-modify-write pair. A
 corrupt or older-schema file reads as "nothing recorded yet".
 
-Counts start when the extension is installed — there is no backfill from old
-sessions.
+Counts start when the extension is installed. Everything older is what
+`/skill-usage-backfill` rebuilds from the session logs.
 
 ## Reading it without pi
 
@@ -126,7 +160,8 @@ Three things the file does not tell you:
 - **What each one costs.** `tok` is measured in-process by pi's prompt formatter and
   is not stored here; `SKILL.md` size ÷ 4 is only an estimate of it.
 - **Whether there is any data.** Counts start at install, so a missing file means
-  "nothing recorded yet", not "nothing is used". Never prune on an empty ledger.
+  "nothing recorded yet", not "nothing is used". Never prune on an empty ledger —
+  run `/skill-usage-backfill` first.
 
 And one trap: an agent auditing skills by `read`ing their `SKILL.md` files records a
 fire for every one it inspects, corrupting the numbers it is auditing. Read this

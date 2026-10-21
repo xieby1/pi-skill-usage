@@ -23,9 +23,10 @@ import {
   type Skill,
 } from "@earendil-works/pi-coding-agent";
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
-import { commitFire, readLedger } from "./ledger.ts";
+import { backfill, commitBackfill } from "./backfill.ts";
+import { commitFire, fires, readLedger } from "./ledger.ts";
 import { inputSkill, readTarget } from "./match.ts";
 import { formatUsage, rows, type Row } from "./report.ts";
 
@@ -161,28 +162,69 @@ export default function skillUsage(pi: ExtensionAPI): void {
     if (name) note(name);
   });
 
+  /**
+   * The root of pi's session tree. `getSessionDir()` is where sessions are written:
+   * a per-project subdirectory of the default root, or a configured `sessionDir`
+   * as-is. `PI_SESSION_FILE` is no use here — pi sets it for bash tool children,
+   * not for this process.
+   */
+  function sessionsDir(ctx: ExtensionContext): string {
+    const dir = ctx.sessionManager.getSessionDir();
+    return basename(dir).startsWith("--") ? dirname(dir) : dir;
+  }
+
+  function report(): { title: string; lines: string[] } {
+    const usage = formatUsage(currentRows());
+    if (!authoritative) {
+      // First line, not the end of the table: a partial skill set must not be
+      // read as the whole answer, and the fix (send a message) is one step away.
+      usage.lines.unshift(
+        "Partial: pi only reveals the full skill set once a request has started.",
+        "Send one message, then run this again.",
+        "",
+      );
+    }
+    return usage;
+  }
+
+  const show = async (
+    lines: () => { title: string; lines: string[] },
+    ctx: ExtensionContext,
+  ): Promise<void> => {
+    try {
+      const { title, lines: body } = lines();
+      await ctx.ui.select(title, body);
+    } catch (error) {
+      await ctx.ui.select("Skill usage", [
+        `Could not read skills: ${error instanceof Error ? error.message : String(error)}`,
+      ]);
+    }
+  };
+
   pi.registerCommand("skill-usage", {
     description: "Prompt cost and fires per month for every skill, as a table",
-    handler: async (_args: string, ctx: ExtensionContext) => {
-      let report: { title: string; lines: string[] };
-      try {
-        report = formatUsage(currentRows());
-      } catch (error) {
-        await ctx.ui.select("Skill usage", [
-          `Could not read skills: ${error instanceof Error ? error.message : String(error)}`,
-        ]);
-        return;
-      }
-      if (!authoritative) {
-        // First line, not the end of the table: a partial skill set must not be
-        // read as the whole answer, and the fix (send a message) is one step away.
-        report.lines.unshift(
-          "Partial: pi only reveals the full skill set once a request has started.",
-          "Send one message, then run this again.",
+    handler: async (_args: string, ctx: ExtensionContext) => show(report, ctx),
+  });
+
+  // Its own command, not a flag: it is a one-shot rebuild, and running it is the
+  // only way to lose the live counts it replaces.
+  pi.registerCommand("skill-usage-backfill", {
+    description: "Rebuild the ledger from the session logs, then show the table",
+    handler: async (_args: string, ctx: ExtensionContext) =>
+      show(() => {
+        const { ledger, sessions } = backfill(sessionsDir(ctx), Date.now());
+        // Nothing found means the scan hit the wrong tree: the counts stay.
+        if (!commitBackfill(ledgerFile, ledger)) {
+          return { title: "Skill usage", lines: ["No fires in the session logs. Ledger left untouched."] };
+        }
+        const total = Object.values(ledger.skills).reduce((sum, usage) => sum + fires(usage), 0);
+        const usage = report();
+        usage.lines.unshift(
+          `Rebuilt from ${sessions} session logs: ${total} fires, ${Object.keys(ledger.skills).length} skills.`,
+          "Safe to run again: it replaces the file rather than adding to it.",
           "",
         );
-      }
-      await ctx.ui.select(report.title, report.lines);
-    },
+        return usage;
+      }, ctx),
   });
 }

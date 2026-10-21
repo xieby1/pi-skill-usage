@@ -142,17 +142,11 @@ export function readLedger(file: string, now: number): Ledger {
   return roll(parseLedger(raw, now), now);
 }
 
-/**
- * One fire, one read-modify-write. Returns the ledger as written.
- *
- * Two windows firing at the same instant can still lose one count: the rename
- * makes each write atomic, not the read-modify-write pair.
- */
-export function commitFire(file: string, name: string, at: number): Ledger {
-  const next = record(readLedger(file, at), name, at);
+/** Replace the file atomically: one temp file in the same directory, then a rename. */
+export function writeLedger(file: string, ledger: Ledger): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ v: SCHEMA, month: monthKey(next.month), skills: next.skills }, null, 2)}\n`);
+  writeFileSync(tmp, `${JSON.stringify({ v: SCHEMA, month: monthKey(ledger.month), skills: ledger.skills }, null, 2)}\n`);
   try {
     renameSync(tmp, file);
   } catch (err) {
@@ -163,5 +157,16 @@ export function commitFire(file: string, name: string, at: number): Ledger {
     }
     throw err;
   }
+}
+
+/**
+ * One fire, one read-modify-write. Returns the ledger as written.
+ *
+ * Two windows firing at the same instant can still lose one count: the rename
+ * makes each write atomic, not the read-modify-write pair.
+ */
+export function commitFire(file: string, name: string, at: number): Ledger {
+  const next = record(readLedger(file, at), name, at);
+  writeLedger(file, next);
   return next;
 }
