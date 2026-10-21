@@ -20,11 +20,18 @@ export function readTarget(cwd: string, path: string): string {
 }
 
 /**
- * The skill a typed message fires, if any. pi expands `/skill:<name>` only at
- * the very start of the text (`startsWith`, after the editor trims), and only
- * for a skill it loaded, so a command in the middle of a sentence is not a fire.
+ * The skill an `input` event fires, if any. pi expands `/skill:<name>` only at the
+ * very start of the text (`startsWith`, after the editor trims), and only for a
+ * skill it loaded, so a command in the middle of a sentence is not a fire.
+ *
+ * `source` is ignored on purpose: an extension alias such as ponytail's
+ * `/ponytail-help` sends this same text, and pi expands it the same way.
  */
-export function skillCommand(text: string, known: (name: string) => boolean): string | undefined {
-  const match = /^\/skill:([\w.:-]+)/u.exec(text);
+export function inputSkill(
+  event: { text?: unknown; source: string },
+  known: (name: string) => boolean,
+): string | undefined {
+  if (typeof event.text !== "string") return undefined;
+  const match = /^\/skill:([\w.:-]+)/u.exec(event.text);
   return match && known(match[1]) ? match[1] : undefined;
 }

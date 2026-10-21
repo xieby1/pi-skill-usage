@@ -26,7 +26,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { commitFire, readLedger } from "./ledger.ts";
-import { readTarget, skillCommand } from "./match.ts";
+import { inputSkill, readTarget } from "./match.ts";
 import { formatUsage, rows, type Row } from "./report.ts";
 
 interface Installed {
@@ -152,10 +152,9 @@ export default function skillUsage(pi: ExtensionAPI): void {
   });
 
   pi.on("input", (event) => {
-    if (event.source === "extension" || typeof event.text !== "string") return;
     ensureReady();
     // Only count skills pi actually loaded, whatever the message claims.
-    const name = skillCommand(event.text, (wanted) => installed.some((skill) => skill.name === wanted));
+    const name = inputSkill(event, (wanted) => installed.some((skill) => skill.name === wanted));
     if (name) note(name);
   });
 

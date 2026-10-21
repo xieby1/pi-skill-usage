@@ -51,8 +51,10 @@ Two things, both observable from an extension:
   exactly that when a task matches. Paths are resolved the way pi's read tool
   resolves them, so `~/.pi/...` and `@/abs/...` are the same read as the absolute
   path and count the same.
-- **command** — you type `/skill:<name>` at the start of a message, the only place
-  pi expands it. In the middle of a sentence it is plain text, so it is not counted.
+- **command** — a message starts with `/skill:<name>`, the only place pi expands
+  it. In the middle of a sentence it is plain text, so it is not counted. Who sent
+  it does not matter, as long as it lets pi expand it: an extension alias such as
+  ponytail's `/ponytail-help` sends the same text and counts the same.
 
 A skill driven through its own `scripts/` by `bash`, without either of those, is
 not credited. Nothing can see that.

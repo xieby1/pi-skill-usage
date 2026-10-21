@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { readTarget, skillCommand } from "../src/match.ts";
+import { inputSkill, readTarget } from "../src/match.ts";
 
 const cwd = "/work/repo";
 const known = (name: string): boolean => ["ponytail", "x"].includes(name);
@@ -23,12 +23,22 @@ test("a read path is resolved the way pi's read tool resolves it", () => {
 });
 
 test("only a leading /skill: naming a loaded skill counts as a fire", () => {
-  assert.equal(skillCommand("/skill:ponytail now", known), "ponytail");
-  assert.equal(skillCommand("/skill:x", known), "x");
+  const typed = (text: string) => inputSkill({ text, source: "interactive" }, known);
+  assert.equal(typed("/skill:ponytail now"), "ponytail");
+  assert.equal(typed("/skill:x"), "x");
 
   // pi only expands at position 0, and only skills it loaded.
-  assert.equal(skillCommand("  /skill:ponytail", known), undefined);
-  assert.equal(skillCommand("please run /skill:ponytail", known), undefined);
-  assert.equal(skillCommand("/skill:nope", known), undefined);
-  assert.equal(skillCommand("/skill:", known), undefined);
+  assert.equal(typed("  /skill:ponytail"), undefined);
+  assert.equal(typed("please run /skill:ponytail"), undefined);
+  assert.equal(typed("/skill:nope"), undefined);
+  assert.equal(typed("/skill:"), undefined);
+});
+
+test("an extension alias counts the same as typing it", () => {
+  // ponytail's `/ponytail-help` sends exactly this text through sendUserMessage,
+  // so the sender must not decide whether the fire is counted.
+  assert.equal(inputSkill({ text: "/skill:ponytail", source: "extension" }, known), "ponytail");
+
+  // A message with no text is not a fire, whatever the source.
+  assert.equal(inputSkill({ text: undefined, source: "rpc" }, known), undefined);
 });
