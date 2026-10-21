@@ -51,10 +51,13 @@ Two things, both observable from an extension:
   exactly that when a task matches. Paths are resolved the way pi's read tool
   resolves them, so `~/.pi/...` and `@/abs/...` are the same read as the absolute
   path and count the same.
-- **command** — a message starts with `/skill:<name>`, the only place pi expands
-  it. In the middle of a sentence it is plain text, so it is not counted. Who sent
-  it does not matter, as long as it lets pi expand it: an extension alias such as
-  ponytail's `/ponytail-help` sends the same text and counts the same.
+- **command** — the message starts with `/skill:<name>`, the only place pi expands
+  it. The live path sees that text; the logs only keep what pi expands it into, a
+  `<skill name="…" location="…">…</skill>` block, so a rebuild reads that instead.
+  Either way it counts once. In the middle of a sentence it is plain text, so it is
+  not counted. Who sent it does not matter, as long as it lets pi expand it: an
+  extension alias such as ponytail's `/ponytail-help` sends the same text and counts
+  the same.
 
 A skill driven through its own `scripts/` by `bash`, without either of those, is
 not credited. Nothing can see that.
@@ -62,8 +65,8 @@ not credited. Nothing can see that.
 ## Filling in past fires
 
 `/skill-usage-backfill` rebuilds the whole ledger from pi's session logs, so the
-table has history from before the extension was installed. On this machine that
-was 71 fires across 18 skills from 254 sessions, against 2 live ones.
+table has history from before the extension was installed, reaching back over every
+session on disk instead of only the fires counted since install.
 
 It **replaces** the file instead of adding to it. The sessions live in the same
 synced data directory as the ledger, so the logs contain every fire pi wrote to
@@ -73,8 +76,8 @@ whichever machine you happen to be on.
 The parse mirrors [What counts as a fire](#what-counts-as-a-fire) exactly, and
 reads structured records only: tool results quote `SKILL.md` bodies, the system
 prompt pastes the whole skill list, and this README contains the literal
-`/skill:<name>` template, so a text search over the same files reports
-`ponytail-review` at 252 fires instead of 13 — a 19× overcount.
+`/skill:<name>` template, so a text search over the same files also counts every
+passing mention: an order of magnitude more than the parse reports.
 
 Two deliberate differences from the live path:
 
@@ -88,10 +91,9 @@ No confirm prompt. The answer to "overwrite?" is always yes, so
 fires writes nothing, so a machine whose synced sessions have not arrived yet
 cannot empty the ledger.
 
-Two fires are one press away from being lost: one raised by an extension alias
-whose `/skill:<name>` pi logs as the expanded text (live counting sees it, a
-rebuild does not), and one raised by another pi window during the scan itself,
-which the wholesale replace overwrites. Run it while nothing else is firing.
+One fire is one press away from being lost: one raised by another pi window during
+the scan itself, which the wholesale replace overwrites. Run it while nothing else
+is firing.
 
 ## Storage
 

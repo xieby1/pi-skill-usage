@@ -30,8 +30,12 @@ export interface Fire {
 
 /** A skill file is any `SKILL.md`; the name is the directory above it, wherever it lives. */
 const SKILL_PATH = /\/SKILL\.md$/u;
-/** Same rule as the live path: pi expands it only at the very start of the text. */
-const COMMAND = /^\/skill:([\w.:-]+)/u;
+/**
+ * Both shapes a fire takes in the log: the typed command, or the block pi expands it
+ * into, body and all. Either starts the message, and the name ends at whitespace, at
+ * the quote before `location`, or at the end, so a pasted fragment is not a fire.
+ */
+const FIRE = /^(?:\/skill:|<skill name=")([\w.:-]+)(?=$|\s|" location=")/u;
 
 /** Everything the user text of a message says, string or block-shaped. */
 function textOf(content: unknown): string {
@@ -65,7 +69,7 @@ export function firesIn(text: string, cwd = process.cwd()): Fire[] {
     if (!message) continue;
 
     if (message.role === "user") {
-      const match = COMMAND.exec(textOf(message.content).trimStart());
+      const match = FIRE.exec(textOf(message.content).trimStart());
       if (match) out.push({ name: match[1], at });
       continue;
     }

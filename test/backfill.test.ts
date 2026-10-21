@@ -41,6 +41,25 @@ test("only the two live rules count, never text that merely looks like them", ()
   );
 });
 
+test("a /skill: command counts as the block pi stores in its place", () => {
+  const block = (name: string, tail = "") =>
+    `<skill name="${name}" location="/skills/${name}/SKILL.md">\nReferences are relative to /skills.\n\n${
+      "body ".repeat(50)
+    }\n</skill>${tail}`;
+  const text = session("/home/u/work", [
+    ["2026-09-01T00:00:00Z", typed(block("paddleocr-scanned-pdf"))],
+    ["2026-09-02T00:00:00Z", typed(block("ponytail-help", "\n\nuser text after the skill"))],
+    ["2026-09-03T00:00:00Z", typed(`quoted: ${block("fake")}`)],
+    ["2026-09-04T00:00:00Z", typed("<skill_tool>not a skill block</skill_tool>")],
+    // pi always writes `location`; a pasted fragment that lacks it is not a fire.
+    ["2026-09-05T00:00:00Z", typed('<skill name="no-location">body</skill>')],
+  ]);
+  assert.deepEqual(
+    firesIn(text).map((fire) => fire.name),
+    ["paddleocr-scanned-pdf", "ponytail-help"],
+  );
+});
+
 test("a fire is credited to the skill's directory, so a rename keeps its old entry", () => {
   const text = session("/home/u/work", [
     ["2026-09-03T00:00:00Z", read("@/nix/store/abc-pkg/skills/old-name/SKILL.md")],
