@@ -26,7 +26,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { commitFire, readLedger } from "./ledger.ts";
-import { formatBuckets, formatCost, formatUnused, rows, type Row } from "./report.ts";
+import { formatUsage, rows, type Row } from "./report.ts";
 
 interface Installed {
   name: string;
@@ -63,9 +63,10 @@ function measure(skills: Skill[]): Installed[] {
 }
 
 export default function skillUsage(pi: ExtensionAPI): void {
-  // The v2 shape lives in its own file: a pi window still running v1 reads the
-  // main file, calls it empty, and rewrites it as v1 — which would erase this.
-  const ledgerFile = resolve(getAgentDir(), "skill-usage-v2.json");
+  // The v3 shape lives in its own file: a pi window still running an older
+  // extension reads another path, finds nothing, and would rewrite it in the old
+  // shape — which would erase this.
+  const ledgerFile = resolve(getAgentDir(), "skill-usage-v3.json");
   let installed: Installed[] = [];
   let byPath = new Map<string, string>();
   /** False until pi hands over the prompt set; the command fallback is partial. */
@@ -155,37 +156,27 @@ export default function skillUsage(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("skill-usage", {
-    description: "Prompt cost and fire counts per skill: /skill-usage [unused|cost|buckets]",
-    handler: async (args: string, ctx: ExtensionContext) => {
-      const route = args.trim().toLowerCase() || "unused";
-      const formats = new Map<string, (all: Row[]) => string[]>([
-        ["unused", formatUnused],
-        ["cost", formatCost],
-        ["buckets", formatBuckets],
-      ]);
-      const format = formats.get(route);
-      if (!format) {
-        await ctx.ui.select("Skill usage", ["Usage: /skill-usage [unused | cost | buckets]"]);
-        return;
-      }
-      let list: Row[];
+    description: "Prompt cost and fires per month for every skill, as a table",
+    handler: async (_args: string, ctx: ExtensionContext) => {
+      let report: { title: string; lines: string[] };
       try {
-        list = currentRows();
+        report = formatUsage(currentRows());
       } catch (error) {
         await ctx.ui.select("Skill usage", [
           `Could not read skills: ${error instanceof Error ? error.message : String(error)}`,
         ]);
         return;
       }
-      const lines = format(list);
       if (!authoritative) {
-        lines.push(
-          "",
+        // First line, not the end of the table: a partial skill set must not be
+        // read as the whole answer, and the fix (send a message) is one step away.
+        report.lines.unshift(
           "Partial: pi only reveals the full skill set once a request has started.",
           "Send one message, then run this again.",
+          "",
         );
       }
-      await ctx.ui.select(`Skill usage · ${route}`, lines);
+      await ctx.ui.select(report.title, report.lines);
     },
   });
 }

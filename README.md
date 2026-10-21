@@ -1,45 +1,35 @@
 # pi-skill-usage
 
-Which skills earn their prompt cost, answered globally: `/skill-usage unused`.
+Which skills earn their prompt cost, answered globally: `/skill-usage`, one table,
+no arguments.
 
 Every skill in `<available_skills>` costs tokens on every request. Most trackers
-show you which skills fired; this one shows you the ones that never did, sorted
-by what they actually cost, using pi's own prompt formatter rather than an
-estimate.
+show you which skills fired; this one shows you what each one costs and when it
+last earned that cost, using pi's own prompt formatter rather than an estimate.
 
 ```
-/skill-usage unused
-69 of 78 prompt-visible skills have never fired, costing 2841 tokens on every request:
+Skill usage · 78 skills · 2841 tok · 69 never fired
 
-   152  ponytail-review
-   146  home-manager-git-ssh-guest-keys
-   145  circle-generate-batch-import-json
-   ...
+  tok  skill                      sum  10  9  8  7  6  5  4  3  2  1 12 11 >12
+  ---  -----                      ---  --  -  -  -  -  -  -  -  -  - -- -- ---
+  152  ponytail-review              7   2  1  0  4  0  0  0  0  0  0  0  0   0
+  120  xiangshan-nanhu-v5           7   0  0  0  0  0  0  0  0  0  0  0  0   7
+  145  circle-generate-batch-i…     0   0  0  0  0  0  0  0  0  0  0  0  0   0
+  146  home-manager-package-up…     0   0  0  0  0  0  0  0  0  0  0  0  0   0
+  ...
 ```
 
-`/skill-usage cost` lists every prompt-visible skill with its cost, fire count and
-last use.
+**`tok`** is what the skill adds to every request. **`sum`** is how many times it
+fired in total. The twelve numbers after that are fires per month, this month
+first and going back — with today in October they are `10 9 … 1` of this year,
+then `12 11` of last year — and **`>12`** is everything older than a year.
 
-`/skill-usage buckets` is the same data as a 13-row histogram: fires per month for
-the last 12 months, then everything older than that window.
-
-```
-/skill-usage buckets
-78 prompt-visible skills, 2841 tokens on every request, fires per month:
-
-   2026-10   23    9      412 tok
-   2026-09   11   11      655 tok
-   2026-08    6    5      223 tok
-   ...
-   2025-11    0    0        0 tok
->12 months    0    0        0 tok
-
-Columns: fires, distinct skills that fired, their prompt rent. Months are UTC.
-66 of 78 prompt-visible skills never fired: see /skill-usage unused.
-```
-
-Each skill is counted once per month it fired in, so `fires` sums across rows while
-`tok` does not — it is the rent of the skills that were earning it that month.
+The `tok` total and the skill count are in the heading; the table itself is
+nothing but skills, so it answers "what does this cost me", "which skills are
+dead" (a row of zeros) and "is my use of skills fading" (the right-hand columns
+filling up). Rows are ranked by `sum`, most-fired first, so everything that never
+fired collects at the bottom in name order. A newly installed extension shows
+zeros in `>12` until it has been running for a year.
 
 ## Install
 
@@ -66,38 +56,40 @@ not credited. Nothing can see that.
 
 ## Storage
 
-`~/.pi/agent/skill-usage-v2.json`, one entry per skill, global across projects and
+`~/.pi/agent/skill-usage-v3.json`, one entry per skill, global across projects and
 sessions. The version is in the filename on purpose: a pi window still running an
-older extension reads the other file, and would otherwise find this one empty and
+older extension reads another path, and would otherwise find this one empty and
 rewrite it in the old shape. It looks like this:
 
 ```json
 {
-  "v": 2,
+  "v": 3,
   "month": "2026-10",
   "skills": {
     "ponytail-review": {
-      "m": [1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0],
-      "older": 9,
-      "lastAt": 1792573000000
+      "m": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2],
+      "older": 9
     }
   }
 }
 ```
 
-`m[0]` is the current month, `m[11]` is eleven months back, `older` is anything
-older than the window. Thirteen numbers per skill, so the file is sized by how many
-skills exist, not by how much you use them: nothing to prune, no retention setting
-worth having.
+`m` is indexed by month of the year: `m[0]` is January, `m[11]` is December. Each
+slot holds the count for the most recent occurrence of that month, so with the
+anchor in October `m[9]` is this October, `m[8]` this September, and `m[11]` last
+December. The slot never moves; `older` is everything before the twelve-month
+window. Thirteen numbers per skill, so the file is sized by how many skills exist,
+not by how much you use them: nothing to prune, no retention setting worth having.
 
-The month array only means something relative to `"month"`, so rollover is
-explicit: on every read the window slides forward to today, spilling whatever
-leaves it into `older`. Reads never shift it backwards — a clock that jumped is not
-a new bucket. Writes are one read-modify-write per fire: re-read, roll, add one to
-the current month, atomic rename, with nothing accumulated in memory, so a session
-left open across a month boundary cannot misbucket a count. Two windows firing in
-the same instant can still lose one count; the rename makes each write atomic, not
-the read-modify-write pair. A corrupt or v1 file reads as "nothing recorded yet".
+The slots are relative to `"month"`, so rollover is explicit: on every read the
+window slides to today, and each month that leaves it is added to `older` and its
+slot zeroed. Reads never shift it backwards — a clock that jumped is not a new
+bucket, and a fire stamped before the window is counted in its own month's slot.
+Writes are one read-modify-write per fire: re-read, roll, add one, atomic rename,
+with nothing accumulated in memory, so a session left open across a month boundary
+cannot misbucket a count. Two windows firing in the same instant can still lose one
+count; the rename makes each write atomic, not the read-modify-write pair. A
+corrupt or older-schema file reads as "nothing recorded yet".
 
 Counts start when the extension is installed — there is no backfill from old
 sessions.
