@@ -33,9 +33,6 @@ export function rows(installed: Array<{ name: string; chars: number; promptVisib
   });
 }
 
-/** Name column width; with the 13 month columns this keeps a row inside 80 columns. */
-const NAME = 24;
-
 /**
  * One row per prompt-visible skill: what its prompt cost is, how often it fired
  * in each of the last twelve months (this month first, then back, then
@@ -45,7 +42,7 @@ const NAME = 24;
  * text block, where pi's markdown table renderer would draw a border around
  * every column and could not right-align numbers.
  *
- * Skill names are ASCII identifiers, so slicing them keeps the columns aligned
+ * Skill names are ASCII identifiers, so padding them keeps the columns aligned
  * without a width library.
  */
 export function formatUsage(all: Row[], now = Date.now()): { title: string; lines: string[] } {
@@ -65,9 +62,12 @@ export function formatUsage(all: Row[], now = Date.now()): { title: string; line
     ...visible.flatMap((row) => Array.from(columns, (slot) => String(row.usage?.m[slot] ?? 0).length)),
   );
   const olderWidth = Math.max(3, ...visible.map((row) => String(row.usage?.older ?? 0).length));
+  // Names are never clipped: the column is as wide as the longest name loaded, so
+  // the table grows instead of hiding which skill a row is about.
+  const nameWidth = Math.max("skill".length, ...visible.map((row) => row.name.length));
   const cell = (value: string | number, width: number): string => String(value).padStart(width);
   const line = (tok: string, name: string, sum: string, m: Array<string | number>, older: string): string =>
-    `${cell(tok, 5)}  ${name.length > NAME ? `${name.slice(0, NAME - 1)}…` : name.padEnd(NAME)}  ` +
+    `${cell(tok, 5)}  ${name.padEnd(nameWidth)}  ` +
     `${cell(sum, 4)}  ${m.map((n) => cell(n, monthWidth)).join(" ")} ${cell(older, olderWidth)}`;
 
   const header = line("tok", "skill", "sum", columns.map((slot) => slot + 1), ">12");

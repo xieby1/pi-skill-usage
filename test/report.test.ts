@@ -19,12 +19,17 @@ const installed = [
   { name: "used", chars: 80, promptVisible: true },
 ];
 
+/** Name column is the longest installed name, so the offsets below move with it. */
+const NAME_W = Math.max("skill".length, ...installed.map((skill) => skill.name.length));
+const SUM_START = 7 + NAME_W + 2;
+const MONTH_START = SUM_START + 4 + 2;
+
 /** Fixed column offsets, so a test fails if the columns stop lining up. */
 const cell = (line: string, start: number, width: number): string => line.slice(start, start + width).trim();
 const tok = (line: string): string => cell(line, 0, 5);
-const name = (line: string): string => cell(line, 7, 24);
-const sum = (line: string): string => cell(line, 33, 4);
-const month = (line: string, index: number): string => cell(line, 39 + index * 3, 2);
+const name = (line: string): string => cell(line, 7, NAME_W);
+const sum = (line: string): string => cell(line, SUM_START, 4);
+const month = (line: string, index: number): string => cell(line, MONTH_START + index * 3, 2);
 const older = (line: string): string => cell(line, line.length - 3, 3);
 const months = (line: string): string[] => Array.from({ length: MONTHS }, (_, i) => month(line, i));
 
@@ -45,7 +50,7 @@ test("rows treats a zero-fire entry as never fired", () => {
 test("the table has one width for every line, and months run newest first", () => {
   const lines = report(rows(installed, ledger)).lines;
   assert.equal(new Set(lines.map((line) => line.length)).size, 1);
-  assert.equal(lines[0].length, 78);
+  assert.equal(lines[0].length, 60);
 
   assert.deepEqual(months(lines[0]), ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "12", "11"]);
   assert.equal(older(lines[0]), ">12");
@@ -84,11 +89,13 @@ test("older-than-a-year fires land in the last column", () => {
   assert.deepEqual(months(line), Array.from({ length: MONTHS }, () => "0"));
 });
 
-test("a long skill name is clipped to the column instead of shifting it", () => {
-  const long = [{ name: "circle-generate-batch-import-json", chars: 40, promptVisible: true }];
-  const line = report(rows(long, { month: ledger.month, skills: {} })).lines[2];
-  assert.equal(name(line), "circle-generate-batch-i…");
-  assert.equal(line.length, 78);
+test("a long skill name widens the table instead of being clipped", () => {
+  const name = "circle-generate-batch-import-json";
+  const long = [{ name, chars: 40, promptVisible: true }];
+  const lines = report(rows(long, { month: ledger.month, skills: {} })).lines;
+  assert.equal(new Set(lines.map((line) => line.length)).size, 1);
+  assert.equal(lines[2].slice(7, 7 + name.length), name);
+  assert.equal(lines[0].slice(7, 7 + name.length), "skill".padEnd(name.length));
 });
 
 test("a count wider than its column widens the column, not the row", () => {
@@ -99,7 +106,7 @@ test("a count wider than its column widens the column, not the row", () => {
 
   const used = lines.find((line) => name(line) === "used")!;
   // Month cells grew to three characters, so the first month starts one column later.
-  assert.equal(cell(used, 39, 3), "150");
+  assert.equal(cell(used, MONTH_START, 3), "150");
   assert.equal(cell(used, lines[0].length - 4, 4), "1200");
 });
 

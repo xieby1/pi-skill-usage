@@ -10,12 +10,12 @@ last earned that cost, using pi's own prompt formatter rather than an estimate.
 ```
 Skill usage · 78 skills · 2841 tok · 69 never fired
 
-  tok  skill                      sum  10  9  8  7  6  5  4  3  2  1 12 11 >12
-  ---  -----                      ---  --  -  -  -  -  -  -  -  -  - -- -- ---
-  152  ponytail-review              7   2  1  0  4  0  0  0  0  0  0  0  0   0
-  120  xiangshan-nanhu-v5           7   0  0  0  0  0  0  0  0  0  0  0  0   7
-  145  circle-generate-batch-i…     0   0  0  0  0  0  0  0  0  0  0  0  0   0
-  146  home-manager-package-up…     0   0  0  0  0  0  0  0  0  0  0  0  0   0
+  tok  skill                               sum  10  9  8  7  6  5  4  3  2  1 12 11 >12
+  ---  -----                               ---  --  -  -  -  -  -  -  -  -  - -- -- ---
+  152  ponytail-review                       7   2  1  0  4  0  0  0  0  0  0  0  0   0
+  120  xiangshan-nanhu-v5                    7   0  0  0  0  0  0  0  0  0  0  0  0   7
+  145  circle-generate-batch-import-json     0   0  0  0  0  0  0  0  0  0  0  0  0   0
+  146  home-manager-package-update           0   0  0  0  0  0  0  0  0  0  0  0  0   0
   ...
 ```
 
@@ -30,6 +30,9 @@ dead" (a row of zeros) and "is my use of skills fading" (the right-hand columns
 filling up). Rows are ranked by `sum`, most-fired first, so everything that never
 fired collects at the bottom in name order. A newly installed extension shows
 zeros in `>12` until it has been running for a year.
+
+The name column is as wide as the longest loaded skill name, so no name is ever
+clipped: a long one widens the table rather than hiding which skill it is.
 
 ## Install
 
