@@ -48,8 +48,11 @@ pi -e npm:pi-skill-usage
 Two things, both observable from an extension:
 
 - **model** — the agent `read`s a skill's `SKILL.md`. pi's prompt tells it to do
-  exactly that when a task matches.
-- **command** — you type `/skill:<name>`.
+  exactly that when a task matches. Paths are resolved the way pi's read tool
+  resolves them, so `~/.pi/...` and `@/abs/...` are the same read as the absolute
+  path and count the same.
+- **command** — you type `/skill:<name>` at the start of a message, the only place
+  pi expands it. In the middle of a sentence it is plain text, so it is not counted.
 
 A skill driven through its own `scripts/` by `bash`, without either of those, is
 not credited. Nothing can see that.
@@ -78,8 +81,10 @@ rewrite it in the old shape. It looks like this:
 slot holds the count for the most recent occurrence of that month, so with the
 anchor in October `m[9]` is this October, `m[8]` this September, and `m[11]` last
 December. The slot never moves; `older` is everything before the twelve-month
-window. Thirteen numbers per skill, so the file is sized by how many skills exist,
-not by how much you use them: nothing to prune, no retention setting worth having.
+window. Thirteen numbers per skill, so the file is sized by how many skill names
+have ever fired — not by how much you use them, and not by how many you have now:
+renaming a skill starts a second entry and leaves the old one behind. Nothing to
+prune, no retention setting worth having.
 
 The slots are relative to `"month"`, so rollover is explicit: on every read the
 window slides to today, and each month that leaves it is added to `older` and its

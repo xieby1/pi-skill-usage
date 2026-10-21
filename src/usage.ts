@@ -26,6 +26,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { commitFire, readLedger } from "./ledger.ts";
+import { readTarget, skillCommand } from "./match.ts";
 import { formatUsage, rows, type Row } from "./report.ts";
 
 interface Installed {
@@ -71,9 +72,10 @@ export default function skillUsage(pi: ExtensionAPI): void {
   let byPath = new Map<string, string>();
   /** False until pi hands over the prompt set; the command fallback is partial. */
   let authoritative = false;
+  /** Key of the set the last measurement was made for: re-measuring is quadratic. */
+  let measured: string | null = null;
 
   function adopt(list: Installed[]): void {
-    if (list.length === 0) return; // never replace a good set with nothing
     installed = list;
     byPath = new Map(list.map((skill) => [canonical(skill.filePath), skill.name]));
   }
@@ -123,10 +125,14 @@ export default function skillUsage(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", (event) => {
     const list = (event as { systemPromptOptions?: { skills?: Skill[] } }).systemPromptOptions?.skills;
-    if (Array.isArray(list) && list.length > 0) {
-      authoritative = true;
-      adopt(measure(list));
-    }
+    if (!Array.isArray(list)) return;
+    authoritative = true;
+    // An empty list is the truth too: with every skill removed, the table must
+    // stop showing the ones that are gone.
+    const key = list.map((skill) => `${skill.filePath}\n${skill.description.length}`).join("\u0000");
+    if (key === measured) return;
+    measured = key;
+    adopt(measure(list));
   });
 
   pi.on("session_start", () => ensureReady());
@@ -136,7 +142,7 @@ export default function skillUsage(pi: ExtensionAPI): void {
     const input = event.input as { path?: unknown };
     if (typeof input?.path !== "string") return;
     ensureReady();
-    const wanted = canonical(resolve(ctx.cwd, input.path));
+    const wanted = canonical(readTarget(ctx.cwd, input.path));
     for (const [path, name] of byPath) {
       if (path === wanted) {
         note(name);
@@ -147,12 +153,10 @@ export default function skillUsage(pi: ExtensionAPI): void {
 
   pi.on("input", (event) => {
     if (event.source === "extension" || typeof event.text !== "string") return;
-    const match = /^\s*\/skill:([\w.:-]+)/u.exec(event.text);
-    if (!match) return;
     ensureReady();
-    const name = match[1];
     // Only count skills pi actually loaded, whatever the message claims.
-    if (installed.some((skill) => skill.name === name)) note(name);
+    const name = skillCommand(event.text, (wanted) => installed.some((skill) => skill.name === wanted));
+    if (name) note(name);
   });
 
   pi.registerCommand("skill-usage", {
