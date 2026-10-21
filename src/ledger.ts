@@ -146,7 +146,16 @@ export function readLedger(file: string, now: number): Ledger {
 export function writeLedger(file: string, ledger: Ledger): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ v: SCHEMA, month: monthKey(ledger.month), skills: ledger.skills }, null, 2)}\n`);
+  const body = { v: SCHEMA, month: monthKey(ledger.month), skills: ledger.skills };
+  // `null, 2` breaks every value, but the twelve month slots read as a row and a
+  // changed count should touch one line: collapse digit-only arrays back to one.
+  // A real newline can only sit at a structural position, since JSON escapes the
+  // ones inside strings, so this cannot reach a skill name.
+  const text = JSON.stringify(body, null, 2).replace(
+    /\[\s*\n\s*([\d,\s]*?)\n\s*\]/gu,
+    (_match, inner: string) => `[${inner.replace(/\s+/gu, " ").trim()}]`,
+  );
+  writeFileSync(tmp, `${text}\n`);
   try {
     renameSync(tmp, file);
   } catch (err) {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { commitFire, emptyLedger, fires, MONTHS, parseLedger, readLedger, record, roll } from "../src/ledger.ts";
+import { commitFire, emptyLedger, fires, MONTHS, parseLedger, readLedger, record, roll, writeLedger } from "../src/ledger.ts";
 
 /** UTC month index, same arithmetic as the ledger. */
 const at = (year: number, month: number, day = 15): number => Date.UTC(year, month - 1, day);
@@ -137,4 +137,13 @@ test("commitFire sums within a month, rolls across one, and keeps other skills",
   assert.equal(slots(after), "10:2 11:1");
   assert.match(readFileSync(file, "utf8"), /"month": "2026-11"/);
   assert.match(readFileSync(file, "utf8"), /"v": 3/u);
+});
+
+test("the month slots stay on one line and still read back as numbers", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "skill-usage-")), "skill-usage.json");
+  const ledger = record(emptyLedger(at(2026, 10)), "a", at(2026, 10));
+  writeLedger(file, ledger);
+  const text = readFileSync(file, "utf8");
+  assert.match(text, /"m": \[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0\]/u);
+  assert.deepEqual(readLedger(file, at(2026, 10)).skills.a.m, monthly(10, 1));
 });
