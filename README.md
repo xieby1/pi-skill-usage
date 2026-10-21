@@ -1,7 +1,7 @@
 # pi-skill-usage
 
-Which skills earn their prompt cost, answered globally: `/skill-usage`, one table,
-no arguments.
+Which skills earn their prompt cost, answered globally: `/skill-usage`, one table
+printed into the chat, no arguments and nothing to pick.
 
 Every skill in `<available_skills>` costs tokens on every request. Most trackers
 show you which skills fired; this one shows you what each one costs and when it

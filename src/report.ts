@@ -41,10 +41,9 @@ const NAME = 24;
  * in each of the last twelve months (this month first, then back, then
  * everything older). The totals live in the title, so every row is a skill.
  *
- * Fixed-width text rather than a markdown table: pi renders those through
- * `ctx.ui.select`, which truncates every line to the terminal width, and pi's
- * markdown table renderer puts a border around every column and cannot
- * right-align numbers.
+ * Fixed-width text rather than a markdown table: this is printed as one plain
+ * text block, where pi's markdown table renderer would draw a border around
+ * every column and could not right-align numbers.
  *
  * Skill names are ASCII identifiers, so slicing them keeps the columns aligned
  * without a width library.

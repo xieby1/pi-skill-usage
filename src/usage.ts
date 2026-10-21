@@ -171,17 +171,18 @@ export default function skillUsage(pi: ExtensionAPI): void {
   // nothing partial left to warn about: the table is the answer either way.
   const report = (): { title: string; lines: string[] } => formatUsage(currentRows());
 
-  const show = async (
-    lines: () => { title: string; lines: string[] },
-    ctx: ExtensionContext,
-  ): Promise<void> => {
+  // Printed, not asked: `ui.select` is a picker, so it would wait for an Enter
+  // that means nothing here. Through pi's status channel, though, a later status
+  // with no chat output in between replaces this block.
+  const show = (lines: () => { title: string; lines: string[] }, ctx: ExtensionContext): void => {
     try {
       const { title, lines: body } = lines();
-      await ctx.ui.select(title, body);
+      ctx.ui.notify(`${title}\n\n${body.join("\n")}`);
     } catch (error) {
-      await ctx.ui.select("Skill usage", [
+      ctx.ui.notify(
         `Could not read skills: ${error instanceof Error ? error.message : String(error)}`,
-      ]);
+        "error",
+      );
     }
   };
 
@@ -203,12 +204,18 @@ export default function skillUsage(pi: ExtensionAPI): void {
         }
         const total = Object.values(ledger.skills).reduce((sum, usage) => sum + fires(usage), 0);
         const usage = report();
-        usage.lines.unshift(
-          `Rebuilt from ${sessions} session logs: ${total} fires, ${Object.keys(ledger.skills).length} skills.`,
-          "Safe to run again: it replaces the file rather than adding to it.",
-          "",
-        );
-        return usage;
+        // The confirmation is the heading: it is what the command did, and the
+        // report's own count line reads as part of the table it labels.
+        return {
+          title: `Rebuilt from ${sessions} session logs: ${total} fires, ${Object.keys(ledger.skills).length} skills.`,
+          lines: [
+            "Safe to run again: it replaces the file rather than adding to it.",
+            "",
+            usage.title,
+            "",
+            ...usage.lines,
+          ],
+        };
       }, ctx),
   });
 }
