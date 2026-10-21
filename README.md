@@ -226,7 +226,3 @@ This package does the same thing, one skill at a time.
 
 The result is about 450 lines of extension plus 240 of tests, no dependencies, nothing
 to rebase.
-
-## License
-
-MIT
