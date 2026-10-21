@@ -77,6 +77,12 @@ one message first. Re-scanning known skill directories, or calling `loadSkills()
 with default paths, misses nearly everything on a configured machine — that
 mistake is why some trackers answer "No skills loaded" in a fresh session.
 
+## Why write this instead of installing a tracker
+
+`COMPARISON.md` records the survey: the unused list, global counting, bounded
+storage and maintenance are not satisfied together by any published package, and
+lists the specific flaw in each.
+
 ## License
 
 MIT
