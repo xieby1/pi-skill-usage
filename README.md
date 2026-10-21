@@ -61,10 +61,12 @@ not credited. Nothing can see that.
 
 ## Storage
 
-`~/.pi/agent/skill-usage-v3.json`, one entry per skill, global across projects and
+`~/.pi/agent/skill-usage/v3.json`, one entry per skill, global across projects and
 sessions. The version is in the filename on purpose: a pi window still running an
 older extension reads another path, and would otherwise find this one empty and
-rewrite it in the old shape. It looks like this:
+rewrite it in the old shape. The file sits in its own directory so that directory
+can be a symlink to a Syncthing folder — symlinking the file itself would be
+undone by the atomic rename on the first fire. It looks like this:
 
 ```json
 {
@@ -108,7 +110,7 @@ command, with no tool to register. `node` is already there (pi needs it); `jq` m
 not be. `sum(m) + older` is the total, whatever the anchor month is:
 
 ```bash
-node -e 'const f=process.env.HOME+"/.pi/agent/skill-usage-v3.json";let s
+node -e 'const f=process.env.HOME+"/.pi/agent/skill-usage/v3.json";let s
  try{s=require(f).skills}catch{console.error("no ledger yet: "+f);process.exit(1)}
  const n=u=>u.m.reduce((a,b)=>a+b,0)+u.older
  for(const [k,u] of Object.entries(s).sort((a,b)=>n(a[1])-n(b[1])))console.log(n(u)+"\t"+k)'

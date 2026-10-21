@@ -67,7 +67,10 @@ export default function skillUsage(pi: ExtensionAPI): void {
   // The v3 shape lives in its own file: a pi window still running an older
   // extension reads another path, finds nothing, and would rewrite it in the old
   // shape — which would erase this.
-  const ledgerFile = resolve(getAgentDir(), "skill-usage-v3.json");
+  // In a directory of its own so the directory can be a symlink to a synced
+  // folder: the temp file and the rename stay inside the real directory, which a
+  // file-level symlink would not survive (rename replaces the link).
+  const ledgerFile = resolve(getAgentDir(), "skill-usage", "v3.json");
   let installed: Installed[] = [];
   let byPath = new Map<string, string>();
   /** False until pi hands over the prompt set; the command fallback is partial. */

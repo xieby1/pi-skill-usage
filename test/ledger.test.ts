@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -108,6 +108,17 @@ test("parse drops skills with no fires and keeps the rest", () => {
   const parsed = parseLedger(raw, now);
   assert.deepEqual(Object.keys(parsed.skills), ["old"]);
   assert.equal(parsed.month, 2026 * 12 + 9);
+});
+
+test("a fire into a symlinked directory lands in the real one", () => {
+  // What lets the ledger live in a synced folder: the directory is the symlink,
+  // so the temp file and the rename both happen inside the real directory.
+  const root = mkdtempSync(join(tmpdir(), "skill-usage-"));
+  mkdirSync(join(root, "real"));
+  symlinkSync(join(root, "real"), join(root, "link"));
+  commitFire(join(root, "link", "v3.json"), "a", at(2026, 10));
+  assert.equal(slots(readLedger(join(root, "real", "v3.json"), at(2026, 10))), "10:1");
+  assert.ok(lstatSync(join(root, "link")).isSymbolicLink(), "the rename must not replace the link");
 });
 
 test("commitFire sums within a month, rolls across one, and keeps other skills", () => {
